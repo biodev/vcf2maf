@@ -7,14 +7,12 @@ use warnings;
 use IO::File;
 use Getopt::Long qw( GetOptions );
 use Pod::Usage qw( pod2usage );
-use Config;
 
 # Set any default paths and constants
 my ( $tumor_id, $normal_id ) = ( "TUMOR", "NORMAL" );
-my ( $vep_path, $vep_data, $vep_forks, $ref_fasta ) = ( "$ENV{HOME}/vep", "$ENV{HOME}/.vep", 1, "$ENV{HOME}/.vep/homo_sapiens/78_GRCh37/Homo_sapiens.GRCh37.75.dna.primary_assembly.fa" );
-my ( $snpeff_path, $snpeff_data, $snpeff_db ) = ( "$ENV{HOME}/snpEff", "$ENV{HOME}/snpEff/data", "GRCh37.75" );
+my ( $vep_path, $vep_data, $vep_forks, $ref_fasta ) = ( "~/vep", "~/.vep", 4, "~/.vep/homo_sapiens/76_GRCh37/Homo_sapiens.GRCh37.75.dna.primary_assembly.fa" );
+my ( $snpeff_path, $snpeff_data, $snpeff_db ) = ( "~/snpEff", "~/snpEff/data", "GRCh37.75" );
 my ( $ncbi_build, $maf_center, $min_hom_vaf ) = ( "GRCh37", ".", 0.7 );
-my $perl_bin = $Config{perlpath};
 
 # Hash to convert 3-letter amino-acid codes to their 1-letter codes
 my %aa3to1 = qw( Ala A Arg R Asn N Asp D Asx B Cys C Glu E Gln Q Glx Z Gly G His H Ile I Leu L
@@ -48,7 +46,6 @@ sub GetEffectPriority {
         'synonymous_variant' => 8, # A sequence variant where there is no resulting change to the encoded amino acid
         'splice_region_variant' => 9, # A sequence variant in which a change has occurred within the region of the splice site, either within 1-3 bases of the exon or 3-8 bases of the intron
         'incomplete_terminal_codon_variant' => 10, # A sequence variant where at least one base of the final codon of an incompletely annotated transcript is changed
-        'protein_altering_variant' => 11, # A sequence variant which is predicted to change the protein encoded in the coding sequence
         'coding_sequence_variant' => 11, # A sequence variant that changes the coding sequence
         'mature_miRNA_variant' => 11, # A transcript variant located with the sequence of the mature miRNA
         'exon_variant' => 11, # A sequence variant that changes exon sequence
@@ -115,12 +112,6 @@ sub GetBiotypePriority {
         'disrupted_domain' => 6, # Otherwise viable coding region omitted from this alternatively spliced transcript because the splice variation affects a region coding for a protein domain
         'processed_transcript' => 6, # Doesn't contain an ORF
         'TEC' => 6, # To be Experimentally Confirmed. This is used for non-spliced EST clusters that have polyA features. This category has been specifically created for the ENCODE project to highlight regions that could indicate the presence of protein coding genes that require experimental validation, either by 5' RACE or RT-PCR to extend the transcripts, or by confirming expression of the putatively-encoded peptide with specific antibodies
-        'TF_binding_site' => 7, # A region of a nucleotide molecule that binds a Transcription Factor or Transcription Factor complex
-        'CTCF_binding_site' =>7, # A transcription factor binding site with consensus sequence CCGCGNGGNGGCAG, bound by CCCTF-binding factor
-        'promoter_flanking_region' => 7, # A region immediately adjacent to a promoter which may or may not contain transcription factor binding sites
-        'enhancer' => 7, # A cis-acting sequence that increases the utilization of (some) eukaryotic promoters, and can function in either orientation and in any location (upstream or downstream) relative to the promoter
-        'promoter' => 7, # A regulatory_region composed of the TSS(s) and binding sites for TF_complexes of the basal transcription machinery
-        'open_chromatin_region' => 7, # A DNA sequence that in the normal state of the chromosome corresponds to an unfolded, un-complexed stretch of double-stranded DNA
         'retained_intron' => 7, # Alternatively spliced transcript believed to contain intronic sequence relative to other, coding, variants
         'nonsense_mediated_decay' => 7, # If the coding sequence (following the appropriate reference) of a transcript finishes >50bp from a downstream splice site then it is tagged as NMD. If the variant does not cover the full reference coding sequence then it is annotated as NMD if NMD is unavoidable i.e. no matter what the exon structure of the missing portion is the transcript will be subject to NMD
         'non_stop_decay' => 7, # Transcripts that have polyA features (including signal) without a prior stop codon in the CDS, i.e. a non-genomic polyA tail attached directly to the CDS without 3' UTR. These transcripts are subject to degradation
@@ -162,7 +153,7 @@ unless( @ARGV and $ARGV[0] =~ m/^-/ ) {
 
 # Parse options and print usage if there is a syntax error, or if usage was explicitly requested
 my ( $man, $help, $use_snpeff ) = ( 0, 0, 0 );
-my ( $input_vcf, $vep_anno, $snpeff_anno, $output_maf, $custom_enst_file );
+my ( $input_vcf, $vep_anno, $snpeff_anno, $output_maf );
 my ( $vcf_tumor_id, $vcf_normal_id );
 GetOptions(
     'help!' => \$help,
@@ -176,7 +167,6 @@ GetOptions(
     'normal-id=s' => \$normal_id,
     'vcf-tumor-id=s' => \$vcf_tumor_id,
     'vcf-normal-id=s' => \$vcf_normal_id,
-    'custom-enst=s' => \$custom_enst_file,
     'vep-path=s' => \$vep_path,
     'vep-data=s' => \$vep_data,
     'vep-forks=s' => \$vep_forks,
@@ -202,13 +192,6 @@ elsif( $use_snpeff and ( $vep_anno or $snpeff_anno )) {
 # Unless specified, assume that the VCF uses the same sample IDs that the MAF will contain
 $vcf_tumor_id = $tumor_id unless( $vcf_tumor_id );
 $vcf_normal_id = $normal_id unless( $vcf_normal_id );
-
-# Load up the custom isoform overrides if provided:
-my %custom_enst;
-if( $custom_enst_file ) {
-	( -s $custom_enst_file ) or die "ERROR: The provided custom ENST file is missing or empty!\nPath: $custom_enst_file\n";
-    %custom_enst = map{chomp; ( $_, 1 )}`grep -v ^# $custom_enst_file | cut -f1`;
-}
 
 # Annotate variants in given VCF to all possible transcripts, unless an annotated VCF was provided
 if( $vep_anno ) {
@@ -260,8 +243,7 @@ elsif( $input_vcf ) {
             ( -s $ref_fasta ) or die "ERROR: Reference FASTA not found: $ref_fasta\n";
 
             # Contruct VEP command using some default options and run it
-            my $vep_cmd = "$perl_bin $vep_path/variant_effect_predictor.pl --quiet --offline --no_stats --everything --shift_hgvs --check_existing --check_alleles --total_length --allele_number --no_escape --xref_refseq --assembly $ncbi_build --dir $vep_data --fasta $ref_fasta --vcf --input_file $input_vcf --output_file $vep_anno";
-            $vep_cmd .= " --fork $vep_forks" if( $vep_forks > 1 );
+            my $vep_cmd = "perl $vep_path/variant_effect_predictor.pl --quiet --fork $vep_forks --offline --no_stats --everything --check_existing --total_length --allele_number --no_escape --gencode_basic --xref_refseq --assembly $ncbi_build --dir $vep_data --fasta $ref_fasta --vcf --input_file $input_vcf --output_file $vep_anno";
 
             system( $vep_cmd ) == 0 or die "\nERROR: Failed to run the VEP annotator!\nCommand: $vep_cmd\n";
             ( -s $vep_anno ) or warn "WARNING: VEP-annotated VCF file is missing or empty!\nPath: $vep_anno\n";
@@ -281,7 +263,8 @@ my @maf_header = qw(
     Match_Norm_Validation_Allele1 Match_Norm_Validation_Allele2 Verification_Status
     Validation_Status Mutation_Status Sequencing_Phase Sequence_Source Validation_Method Score
     BAM_File Sequencer Tumor_Sample_UUID Matched_Norm_Sample_UUID HGVSc HGVSp HGVSp_Short Transcript_ID
-    Exon_Number t_depth t_ref_count t_alt_count n_depth n_ref_count n_alt_count all_effects
+    Exon_Number t_depth t_ref_count t_alt_count n_depth n_ref_count n_alt_count all_effects PhredQualScore GATKFilter GATKGenotype
+    GenotypeQuality PhredLikelihoods MappingQualZero_Count 
 );
 
 # Add extra columns to the MAF depending on whether we used VEP or snpEff
@@ -341,17 +324,30 @@ while( my $line = $vcf_fh->getline ) {
 
     # Parse out info from the tumor genotype field
     my ( %tum_info, @tum_depths );
+    my $raw_genotype = "NA";
+    my $genotype_qual = "NA";
+    my $phredlikelihoods_str = "NA";
+
     if( defined $vcf_tumor_idx ) {
         my @format_keys = split( /\:/, $format_line );
         my $idx = 0;
         %tum_info = map {( $format_keys[$idx++], $_ )} split( /\:/, $rest[$vcf_tumor_idx] );
 
         # If possible, parse the tumor genotype to identify the variant allele
-        if( defined $tum_info{GT} and $tum_info{GT} ne "." and $tum_info{GT} ne "./." ) {
+        if( defined $tum_info{GT} and $tum_info{GT} ne "." and $tum_info{GT} ne "./." ) {            
+            $raw_genotype = $tum_info{GT};
             my @genotype = split( /[\/|]/, $tum_info{GT} );
             # In case of polyploid calls, choose the first non-REF allele, if any
             ( $var_allele_idx ) = grep {$_ ne "0"} @genotype;
             $var_allele_idx = 1 unless( defined $var_allele_idx and $var_allele_idx =~ m/^\d+$/ );
+        }
+
+        if (defined $tum_info{GQ} and $tum_info{GQ} ne ".") {
+            $genotype_qual = $tum_info{GQ};
+        }
+
+        if (defined $tum_info{PL} and $tum_info{PL} ne ".") {
+            $phredlikelihoods_str = $tum_info{PL};
         }
 
         # If AD is defined, then parse out all REF/ALT allele depths, or whatever is in it
@@ -405,12 +401,6 @@ while( my $line = $vcf_fh->getline ) {
             @tum_depths = map{""} @alleles;
             $tum_depths[$var_allele_idx] = $tum_info{AD};
         }
-        # Handle VCF lines from mpileup/bcftools where DV contains the ALT allele depth
-        elsif( defined $tum_info{DV} and defined $tum_info{DP} ) {
-            # Reference allele depth and depths for any other ALT alleles must be left undefined
-            @tum_depths = map{""} @alleles;
-            $tum_depths[$var_allele_idx] = $tum_info{DV};
-        }
         # For all other lines where #depths is not equal to #alleles, blank out the depths
         elsif( @tum_depths and $#tum_depths != $#alleles ) {
             warn "WARNING: Unusual AD format for alleles $ref,$alt in $format_line = " . $rest[$vcf_tumor_idx] . "\n";
@@ -427,7 +417,7 @@ while( my $line = $vcf_fh->getline ) {
         }
 
         # If we have REF/ALT allele depths, but no DP, then set DP equal to the sum of all ADs
-        if(( defined $tum_depths[0] and defined $tum_depths[$var_allele_idx] ) and ( !defined $tum_info{DP} or $tum_info{DP} eq '.' )) {
+        if(( $tum_depths[0] and $tum_depths[$var_allele_idx] ) and ( !defined $tum_info{DP} or $tum_info{DP} eq '.' )) {
             warn "WARNING: DP undefined but ADs available. Setting DP to sum of allele depths in $format_line = " . $rest[$vcf_tumor_idx] . "\n";
             $tum_info{DP} = 0;
             map{$tum_info{DP} += $_ if($_ and $_ ne '.')} @tum_depths;
@@ -512,12 +502,6 @@ while( my $line = $vcf_fh->getline ) {
             @nrm_depths = map{""} @alleles;
             $nrm_depths[$var_allele_idx] = $nrm_info{AD};
         }
-        # Handle VCF lines from mpileup/bcftools where DV contains the ALT allele depth
-        elsif( defined $nrm_info{DV} and defined $nrm_info{DP} ) {
-            # Reference allele depth and depths for any other ALT alleles must be left undefined
-            @nrm_depths = map{""} @alleles;
-            $nrm_depths[$var_allele_idx] = $nrm_info{DV};
-        }
         # For all other lines where #depths is not equal to #alleles, blank out the depths
         elsif( @nrm_depths and $#nrm_depths != $#alleles ) {
             warn "WARNING: Unusual AD format for alleles $ref,$alt in $format_line = " . $rest[$vcf_normal_idx] . "\n";
@@ -534,7 +518,7 @@ while( my $line = $vcf_fh->getline ) {
         }
 
         # If we have REF/ALT allele depths, but no DP, then set DP equal to the sum of all ADs
-        if(( defined $nrm_depths[0] and defined $nrm_depths[$var_allele_idx] ) and ( !defined $nrm_info{DP} or $nrm_info{DP} eq '.' )) {
+        if(( $nrm_depths[0] and $nrm_depths[$var_allele_idx] ) and ( !defined $nrm_info{DP} or $nrm_info{DP} eq '.' )) {
             warn "WARNING: DP undefined but ADs available. Setting DP to sum of allele depths in $format_line = " . $rest[$vcf_normal_idx] . "\n";
             $nrm_info{DP} = 0;
             map{$nrm_info{DP} += $_ if($_ and $_ ne '.')} @nrm_depths;
@@ -652,11 +636,8 @@ while( my $line = $vcf_fh->getline ) {
         my ( $effect_with_gene_name ) = grep { $_->{SYMBOL} } @all_effects;
         my $maf_gene = $effect_with_gene_name->{SYMBOL} if( $effect_with_gene_name );
 
-        # If the gene has user-defined custom isoform overrides, choose that instead
-        ( $maf_effect ) = grep { $_->{SYMBOL} and $_->{SYMBOL} eq $maf_gene and $_->{Transcript_ID} and $custom_enst{$_->{Transcript_ID}} } @all_effects;
-
         # Find the effect on the canonical transcript of that highest priority gene
-        ( $maf_effect ) = grep { $_->{SYMBOL} and $_->{SYMBOL} eq $maf_gene and $_->{CANONICAL} and $_->{CANONICAL} eq "YES" } @all_effects unless( $maf_effect );
+        ( $maf_effect ) = grep { $_->{SYMBOL} and $_->{SYMBOL} eq $maf_gene and $_->{CANONICAL} and $_->{CANONICAL} eq "YES" } @all_effects;
 
         # If that gene has no canonical transcript tagged, choose the highest priority canonical effect on any gene
         ( $maf_effect ) = grep { $_->{CANONICAL} and $_->{CANONICAL} eq "YES" } @all_effects unless( $maf_effect );
@@ -736,11 +717,14 @@ while( my $line = $vcf_fh->getline ) {
         my ( $effect_with_gene_name ) = grep { $_->{Gene_Name} } @all_effects;
         my $maf_gene = $effect_with_gene_name->{Gene_Name} if( $effect_with_gene_name );
 
-        # If the gene has user-defined custom isoform overrides, choose that instead
-        ( $maf_effect ) = grep { $_->{Gene_Name} and $_->{Gene_Name} eq $maf_gene and $_->{Transcript_ID} and $custom_enst{$_->{Transcript_ID}} } @all_effects;
-
         # Find the effect on the longest transcript of that highest priority gene
-        ( $maf_effect ) = sort { $b->{Amino_Acid_Length} <=> $a->{Amino_Acid_Length} } grep { $_->{Gene_Name} eq $maf_gene } @all_effects unless( $maf_effect );
+        ( $maf_effect ) = sort { $b->{Amino_Acid_Length} <=> $a->{Amino_Acid_Length} } grep { $_->{Gene_Name} eq $maf_gene } @all_effects;
+    }
+
+    # Extract MQ0 information
+    my $mq0 = "NA";
+    if ( $info{MQ0} ) {
+        $mq0 = $info{MQ0};
     }
 
     # Construct the MAF columns from the $maf_effect hash, and print to output
@@ -793,9 +777,15 @@ while( my $line = $vcf_fh->getline ) {
         my $effect_type = ( $effect->{Effect} ? $effect->{Effect} : $effect->{Consequence} );
         my $protein_change = ( $effect->{HGVSp} ? $effect->{HGVSp} : '' );
         my $transcript_id = ( $effect->{Transcript_ID} ? $effect->{Transcript_ID} : '' );
-        my $refseq_ids = ( $effect->{RefSeq} ? $effect->{RefSeq} : '' );
-        $maf_line{all_effects} .= "$gene_name,$effect_type,$protein_change,$transcript_id,$refseq_ids;" if( $gene_name and $effect_type and $transcript_id );
+        $maf_line{all_effects} .= "$gene_name,$effect_type,$protein_change,$transcript_id;" if( $gene_name and $effect_type and $transcript_id );
     }
+    
+    $maf_line{PhredQualScore} = $qual;
+    $maf_line{GATKFilter} = $filter;
+    $maf_line{GATKGenotype} = $raw_genotype;
+    $maf_line{GenotypeQuality} = $genotype_qual;
+    $maf_line{PhredLikelihoods} = $phredlikelihoods_str;
+    $maf_line{MappingQualZero_Count} = $mq0;
 
     # At this point, we've generated all we can about this variant, so write it to the MAF
     $maf_fh->print( join( "\t", map{ $maf_line{$_} } @maf_header ) . "\n" );
@@ -851,12 +841,11 @@ __DATA__
  --normal-id      Matched_Norm_Sample_Barcode to report in the MAF [NORMAL]
  --vcf-tumor-id   Tumor sample ID used in VCF's genotype columns [--tumor-id]
  --vcf-normal-id  Matched normal ID used in VCF's genotype columns [--normal-id]
- --custom-enst    List of custom ENST IDs that override canonical selection
  --use-snpeff     Use snpEff to annotate VCF, instead of the default VEP
  --vep-path       Folder containing variant_effect_predictor.pl [~/vep]
  --vep-data       VEP's base cache/plugin directory [~/.vep]
  --vep-forks      Number of forked processes to use when running VEP [4]
- --ref-fasta      Reference FASTA file [~/.vep/homo_sapiens/78_GRCh37/Homo_sapiens.GRCh37.75.dna.primary_assembly.fa]
+ --ref-fasta      Reference FASTA file [~/.vep/homo_sapiens/76_GRCh37/Homo_sapiens.GRCh37.75.dna.primary_assembly.fa]
  --snpeff-path    Folder containing snpEff.jar and snpEff.config [~/snpEff]
  --snpeff-data    Override for data_dir in snpEff.config [~/snpEff/data]
  --snpeff-db      Database version to use when running snpEff [GRCh37.75]
@@ -888,6 +877,6 @@ This script needs either VEP or snpEff - variant annotators that map effects of 
 
 =head1 LICENSE
 
- Apache-2.0 | Apache License, Version 2.0 | https://www.apache.org/licenses/LICENSE-2.0
+ LGPL v3 | GNU Lesser General Public License v3.0 | http://www.gnu.org/licenses/lgpl-3.0.html
 
 =cut
